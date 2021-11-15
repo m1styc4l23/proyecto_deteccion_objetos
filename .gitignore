@@ -1,0 +1,4 @@
+#git ignore all
+
+*.weights
+*.mp4
