@@ -1,4 +1,3 @@
-#Librerias
 from __future__ import division
 from models import *
 from utils.utils import *
@@ -10,8 +9,12 @@ import cv2
 from PIL import Image
 import torch
 from torch.autograd import Variable
+import time
 
-
+# used to record the time when we processed last frame
+prev_frame_time = 0
+# used to record the time at which we processed current frame
+new_frame_time = 0
 
 def Convertir_RGB(img):
     # Convertir Blue, green, red a Red, green, blue
@@ -56,32 +59,37 @@ if __name__ == "__main__":
     print("cuda" if torch.cuda.is_available() else "cpu")
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
 
-    #Selección del modelo pre entrenado para la detección
+
     if opt.weights_path.endswith(".weights"):
         model.load_darknet_weights(opt.weights_path)
     else:
         model.load_state_dict(torch.load(opt.weights_path))
 
-    #Selección de la fuente de ingreso de datos y la salida de datos en un archivo output.mp4
     model.eval()  
     classes = load_classes(opt.class_path)
     Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
     if opt.webcam==1:
         cap = cv2.VideoCapture(0)
-        out = cv2.VideoWriter('output.mp4',cv2.VideoWriter_fourcc('M','J','P','G'), 10, (1280,960))
+        out = cv2.VideoWriter('output.mp4',cv2.VideoWriter_fourcc(*'mp4v'), 10, (1280,960))
     else:
         cap = cv2.VideoCapture(opt.directorio_video)
         # frame_width = int(cap.get(3))
         # frame_height = int(cap.get(4))
-        out = cv2.VideoWriter('outp.mp4',cv2.VideoWriter_fourcc('M','J','P','G'), 10, (1280,960))
+        out = cv2.VideoWriter('outp.mp4',cv2.VideoWriter_fourcc(*'mp4v'), 10, (1280,960))
     colors = np.random.randint(0, 255, size=(len(classes), 3), dtype="uint8")
     a=[]
+    
+    
+    #new_frame_time = time.time()
+    #x = 1 # displays the frame rate every 1 second
+    #counter = 0
+    
     while cap:
         ret, frame = cap.read()
         if ret is False:
             break
         frame = cv2.resize(frame, (1280, 960), interpolation=cv2.INTER_CUBIC)
-        #La imagen viene en Blue, Green, Red y la convertimos a RGB que es la entrada que requiere el modelo
+        #LA imagen viene en Blue, Green, Red y la convertimos a RGB que es la entrada que requiere el modelo
         RGBimg=Convertir_RGB(frame)
         imgTensor = transforms.ToTensor()(RGBimg)
         imgTensor, _ = pad_to_square(imgTensor, 0)
@@ -94,11 +102,27 @@ if __name__ == "__main__":
             detections = model(imgTensor)
             detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
 
+        #fraps
+        new_frame_time = time.time()
+        fps = 1/(new_frame_time-prev_frame_time)
+        prev_frame_time = new_frame_time
+        fps = int(fps)
+        fps = str(fps)
 
+        #counter+=1
+        #if (time.time() - new_frame_time) > 1 :
+        #    print("FPS: ", counter / (time.time() - new_frame_time))
+        #    counter = 0
+        #    new_frame_time = time.time()
+
+        #print("FPS: ", 1.0 / (time.time() - new_frame_time)) 
+
+        texto_estado = "Conteo"
         person_counter = 0
-        #Recorrer detecciones, asignación del header del tipo de objeto detectado, certeza de la prección y el conteo
+
         for detection in detections:
             if detection is not None:
+                puntos = []
                 detection = rescale_boxes(detection, opt.img_size, RGBimg.shape[:2])
                 for x1, y1, x2, y2, conf, cls_conf, cls_pred in detection:
                     box_w = x2 - x1
@@ -109,14 +133,37 @@ if __name__ == "__main__":
                     cv2.putText(frame, classes[int(cls_pred)], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 5)# Nombre de la clase detectada
                     cv2.putText(frame, str("%.2f" % float(conf)), (x2, y2 - box_h), cv2.FONT_HERSHEY_SIMPLEX, 0.5,color, 5) # Certeza de prediccion de la clase
                     person_counter += 1
+                    puntos.append([x1,y1,box_w,box_h])
                     
-        #Pintar rectangulo y conteo de objetos
-        cv2.rectangle(frame, (0,0), (frame.shape[1],40), (0,0,0), -1)
+                if len(puntos) == 2:
+                    x1, y1, w1, h1 = puntos[0]
+                    x2, y2, w2, h2 = puntos[1]
+                    
+                    if x1 < x2:
+                        distancia_pixeles = abs(x2 - (x1+w1))
+                        distancia_cm = (distancia_pixeles*240)/1280
+                        cv2.putText(frame, "{:.2f} cm".format(distancia_cm), (x1+w1+distancia_pixeles//2, y1-30), 2, 0.8, (0,0,255), 1, cv2.LINE_AA)
+                        cv2.line(frame,(x1+w1,y1-20), (x2,y1-20), (0,0,255), 2)
+                        cv2.line(frame,(x1+w1,y1-30), (x1+w1,y1-10), (0,0,255), 2)
+                        cv2.line(frame,(x2,y1-30), (x2,y1-10), (0,0,255), 2)
+                    else:
+                        distancia_pixeles = abs(x1 - (x2+w2))
+                        distancia_cm = (distancia_pixeles*240)/1280
+                        cv2.putText(frame, "{:.2f} cm".format(distancia_cm), (x2+w2+distancia_pixeles//2, y2-30), 2, 0.8, (0,0,255), 1, cv2.LINE_AA)
+                        cv2.line(frame,(x2+w2,y2-20), (x1,y2-20), (0,0,255), 2)
+                        cv2.line(frame,(x2+w2,y2-30), (x2+w2,y2-10), (0,0,255), 2)
+                        cv2.line(frame,(x1,y2-30), (x1,y2-10), (0,0,255), 2)
+        
+        #Imprimir fps
+        cv2.putText(frame, 'FPS: ' + fps, (200, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 255, 0), 2, cv2.LINE_AA)
+        
+        #Imprimir Conteo
+        #cv2.rectangle(frame, (0,0), (frame.shape[1],40), (0,0,0), -1)
         color = (0, 255, 0)
         texto_estado = 'Conteo: ' + str(person_counter)
         cv2.putText(frame, texto_estado, (10,30),
             cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-
+        
         #Convertimos de vuelta a BGR para que cv2 pueda desplegarlo en los colores correctos
         if opt.webcam==1:
             cv2.imshow('frame', Convertir_BGR(RGBimg))
@@ -128,7 +175,6 @@ if __name__ == "__main__":
 
         if cv2.waitKey(25) & 0xFF == ord('q'):
             break
-        
     out.release()
     cap.release()
     cv2.destroyAllWindows()
