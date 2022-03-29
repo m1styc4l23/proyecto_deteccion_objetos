@@ -10,6 +10,8 @@ from PIL import Image
 import torch
 from torch.autograd import Variable
 import time
+import paho.mqtt.client
+from datetime import datetime
 
 # used to record the time when we processed last frame
 prev_frame_time = 0
@@ -37,9 +39,35 @@ def Convertir_BGR(img):
     img[:, :, 2] = r
     return img
 
+def on_connect(client, userdata, flags, rc):
+    print('connected (%s)' % client._client_id)
+    client.subscribe(topic='yolo/conteo', qos=2)
+    
+def on_message(client, userdata, message):
+    print('_______________________')
+    print('topic: %s' % message.topic)
+    print('payload: %s' % message.payload)
+    print('qos: %d' % message.qos)
 
+def Client_MQTT():
+    client = paho.mqtt.client.Client(client_id='yolo-subs', clean_session=False)
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.connect(host='127.0.0.1', port=1884)
+    client.loop_forever()
+    
+def mqtt_connect():
+    client = paho.mqtt.client.Client(client_id='yolo-subs', clean_session=False)
+    client.connect(host='127.0.0.1', port=1884)
+    client.loop_start()
+    
 
 if __name__ == "__main__":
+    
+    client = paho.mqtt.client.Client(client_id='yolo-pubs', clean_session=False)
+    client.connect(host='127.0.0.1', port=1884)
+    client.loop_start()
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--image_folder", type=str, default="data/samples", help="path to dataset")
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
@@ -83,6 +111,9 @@ if __name__ == "__main__":
     #new_frame_time = time.time()
     #x = 1 # displays the frame rate every 1 second
     #counter = 0
+    
+    #variable contador con la cual se valida que si cambia el conteo realiza una publicación en mqtt
+    person_counter_mqtt = 0
     
     while cap:
         ret, frame = cap.read()
@@ -163,6 +194,11 @@ if __name__ == "__main__":
         texto_estado = 'Conteo: ' + str(person_counter)
         cv2.putText(frame, texto_estado, (10,30),
             cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+        
+        #Publicar Conteo Mqtt
+        if person_counter_mqtt != person_counter :
+            person_counter_mqtt = person_counter
+            client.publish("yolo/conteo", '{' + str(person_counter_mqtt) + ', ' + str(datetime.today()) + '}')
         
         #Convertimos de vuelta a BGR para que cv2 pueda desplegarlo en los colores correctos
         if opt.webcam==1:
