@@ -107,11 +107,7 @@ if __name__ == "__main__":
     colors = np.random.randint(0, 255, size=(len(classes), 3), dtype="uint8")
     a=[]
     
-    
-    #new_frame_time = time.time()
-    #x = 1 # displays the frame rate every 1 second
-    #counter = 0
-    
+        
     #variable contador con la cual se valida que si cambia el conteo realiza una publicación en mqtt
     person_counter_mqtt = 0
     
@@ -140,14 +136,6 @@ if __name__ == "__main__":
         fps = int(fps)
         fps = str(fps)
 
-        #counter+=1
-        #if (time.time() - new_frame_time) > 1 :
-        #    print("FPS: ", counter / (time.time() - new_frame_time))
-        #    counter = 0
-        #    new_frame_time = time.time()
-
-        #print("FPS: ", 1.0 / (time.time() - new_frame_time)) 
-
         texto_estado = "Conteo"
         person_counter = 0
 
@@ -156,15 +144,16 @@ if __name__ == "__main__":
                 puntos = []
                 detection = rescale_boxes(detection, opt.img_size, RGBimg.shape[:2])
                 for x1, y1, x2, y2, conf, cls_conf, cls_pred in detection:
-                    box_w = x2 - x1
-                    box_h = y2 - y1
-                    color = [int(c) for c in colors[int(cls_pred)]]
-                    #print("Se detectó {} en X1: {}, Y1: {}, X2: {}, Y2: {}".format(classes[int(cls_pred)], x1, y1, x2, y2))
-                    frame = cv2.rectangle(frame, (x1, y1 + box_h), (x2, y1), color, 5)
-                    cv2.putText(frame, classes[int(cls_pred)], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 5)# Nombre de la clase detectada
-                    cv2.putText(frame, str("%.2f" % float(conf)), (x2, y2 - box_h), cv2.FONT_HERSHEY_SIMPLEX, 0.5,color, 5) # Certeza de prediccion de la clase
-                    person_counter += 1
-                    puntos.append([x1,y1,box_w,box_h])
+                    if classes[int(cls_pred)] == "person":
+                        box_w = x2 - x1
+                        box_h = y2 - y1
+                        color = [int(c) for c in colors[int(cls_pred)]]
+                        #print("Se detectó {} en X1: {}, Y1: {}, X2: {}, Y2: {}".format(classes[int(cls_pred)], x1, y1, x2, y2))
+                        frame = cv2.rectangle(frame, (x1, y1 + box_h), (x2, y1), color, 5)
+                        cv2.putText(frame, classes[int(cls_pred)], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 5)# Nombre de la clase detectada
+                        cv2.putText(frame, str("%.2f" % float(conf)), (x2, y2 - box_h), cv2.FONT_HERSHEY_SIMPLEX, 0.5,color, 5) # Certeza de prediccion de la clase
+                        person_counter += 1
+                        puntos.append([x1,y1,box_w,box_h])
                     
                 if len(puntos) == 2:
                     x1, y1, w1, h1 = puntos[0]
@@ -189,7 +178,6 @@ if __name__ == "__main__":
         cv2.putText(frame, 'FPS: ' + fps, (200, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 255, 0), 2, cv2.LINE_AA)
         
         #Imprimir Conteo
-        #cv2.rectangle(frame, (0,0), (frame.shape[1],40), (0,0,0), -1)
         color = (0, 255, 0)
         texto_estado = 'Conteo: ' + str(person_counter)
         cv2.putText(frame, texto_estado, (10,30),
