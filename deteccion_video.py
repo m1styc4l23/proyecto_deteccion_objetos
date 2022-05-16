@@ -39,33 +39,30 @@ def Convertir_BGR(img):
     img[:, :, 2] = r
     return img
 
-def on_connect(client, userdata, flags, rc):
-    print('connected (%s)' % client._client_id)
-    client.subscribe(topic='yolo/conteo', qos=2)
-    
-def on_message(client, userdata, message):
-    print('_______________________')
-    print('topic: %s' % message.topic)
-    print('payload: %s' % message.payload)
-    print('qos: %d' % message.qos)
+def calculate_distance(punto1, punto2):
+    x1, y1, w1, h1 = punto1
+    x2, y2, w2, h2 = punto2
 
-def Client_MQTT():
-    client = paho.mqtt.client.Client(client_id='yolo-subs', clean_session=False)
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.connect(host='127.0.0.1', port=1884)
-    client.loop_forever()
-    
-def mqtt_connect():
-    client = paho.mqtt.client.Client(client_id='yolo-subs', clean_session=False)
-    client.connect(host='127.0.0.1', port=1884)
-    client.loop_start()
+    if x1 < x2:
+        distancia_pixeles = abs(x2 - (x1+w1))
+        distancia_cm = (distancia_pixeles*240)/1280
+        cv2.putText(frame, "{:.2f} cm".format(distancia_cm), (x1+w1+distancia_pixeles//2, y1-30), 2, 0.8, (0,0,255), 1, cv2.LINE_AA)
+        cv2.line(frame,(x1+w1,y1-20), (x2,y1-20), (0,0,255), 2)
+        cv2.line(frame,(x1+w1,y1-30), (x1+w1,y1-10), (0,0,255), 2)
+        cv2.line(frame,(x2,y1-30), (x2,y1-10), (0,0,255), 2)
+    else:
+        distancia_pixeles = abs(x1 - (x2+w2))
+        distancia_cm = (distancia_pixeles*240)/1280
+        cv2.putText(frame, "{:.2f} cm".format(distancia_cm), (x2+w2+distancia_pixeles//2, y2-30), 2, 0.8, (0,0,255), 1, cv2.LINE_AA)
+        cv2.line(frame,(x2+w2,y2-20), (x1,y2-20), (0,0,255), 2)
+        cv2.line(frame,(x2+w2,y2-30), (x2+w2,y2-10), (0,0,255), 2)
+        cv2.line(frame,(x1,y2-30), (x1,y2-10), (0,0,255), 2)
     
 
 if __name__ == "__main__":
     
     client = paho.mqtt.client.Client(client_id='yolo-pubs', clean_session=False)
-    client.connect(host='127.0.0.1', port=1884)
+    client.connect(host='127.0.0.1', port=1885)
     client.loop_start()
     
     parser = argparse.ArgumentParser()
@@ -97,7 +94,7 @@ if __name__ == "__main__":
     classes = load_classes(opt.class_path)
     Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
     if opt.webcam==1:
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(4)
         out = cv2.VideoWriter('output.mp4',cv2.VideoWriter_fourcc(*'mp4v'), 10, (1280,960))
     else:
         cap = cv2.VideoCapture(opt.directorio_video)
@@ -155,24 +152,15 @@ if __name__ == "__main__":
                         person_counter += 1
                         puntos.append([x1,y1,box_w,box_h])
                     
-                if len(puntos) == 2:
-                    x1, y1, w1, h1 = puntos[0]
-                    x2, y2, w2, h2 = puntos[1]
-                    
-                    if x1 < x2:
-                        distancia_pixeles = abs(x2 - (x1+w1))
-                        distancia_cm = (distancia_pixeles*240)/1280
-                        cv2.putText(frame, "{:.2f} cm".format(distancia_cm), (x1+w1+distancia_pixeles//2, y1-30), 2, 0.8, (0,0,255), 1, cv2.LINE_AA)
-                        cv2.line(frame,(x1+w1,y1-20), (x2,y1-20), (0,0,255), 2)
-                        cv2.line(frame,(x1+w1,y1-30), (x1+w1,y1-10), (0,0,255), 2)
-                        cv2.line(frame,(x2,y1-30), (x2,y1-10), (0,0,255), 2)
-                    else:
-                        distancia_pixeles = abs(x1 - (x2+w2))
-                        distancia_cm = (distancia_pixeles*240)/1280
-                        cv2.putText(frame, "{:.2f} cm".format(distancia_cm), (x2+w2+distancia_pixeles//2, y2-30), 2, 0.8, (0,0,255), 1, cv2.LINE_AA)
-                        cv2.line(frame,(x2+w2,y2-20), (x1,y2-20), (0,0,255), 2)
-                        cv2.line(frame,(x2+w2,y2-30), (x2+w2,y2-10), (0,0,255), 2)
-                        cv2.line(frame,(x1,y2-30), (x1,y2-10), (0,0,255), 2)
+                if len(puntos) >= 2:
+                    contador = 0
+                    while contador < len(puntos):
+                        print('persona #' + str(contador) + ' puntos ' + str(puntos[contador]))
+                                      
+                        if ( contador + 1 < len(puntos) ) :
+                            calculate_distance(puntos[contador], puntos[contador + 1])
+                                               
+                        contador += 1
         
         #Imprimir fps
         cv2.putText(frame, 'FPS: ' + fps, (200, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 255, 0), 2, cv2.LINE_AA)
@@ -187,6 +175,7 @@ if __name__ == "__main__":
         if person_counter_mqtt != person_counter :
             person_counter_mqtt = person_counter
             client.publish("yolo/conteo", '{' + str(person_counter_mqtt) + ', ' + str(datetime.today()) + '}')
+            client.publish("yolo/conteo/flutter", str(person_counter_mqtt) + ', ' + str(datetime.today()) )
         
         #Convertimos de vuelta a BGR para que cv2 pueda desplegarlo en los colores correctos
         if opt.webcam==1:
